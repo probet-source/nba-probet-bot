@@ -1,5 +1,4 @@
 __pycache__/
 *.pyc
-probet_saas.db
+*.db
 .streamlit/secrets.toml
-
