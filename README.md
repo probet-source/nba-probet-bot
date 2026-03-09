@@ -1,49 +1,48 @@
-# NBA ProBet SaaS 4.0
+# NBA ProBet SaaS 5.0
 
-Versão 4.0 em estilo SaaS real, pronta para GitHub + Streamlit Cloud.
+Versão mais estável, premium e orientada a produto do bot, com foco em **funcionar no Streamlit Cloud sem quebrar**.
 
-## Recursos
+## Stack de dados
 
-- login e cadastro local com SQLite;
-- plano Free e Premium;
-- painel do usuário;
-- jogos do dia com projeções;
-- Matchup Lab;
-- Player Hub;
-- Picks Engine premium;
-- Bankroll Tracker com exportação CSV;
-- coleta de feedback;
-- painel administrativo;
-- MRR estimado e gestão básica de assinantes.
+- **ESPN**: placar do dia, agenda e notícias NBA
+- **BALLDONTLIE**: enriquecimento opcional via `BDL_API_KEY`
+- **TheSportsDB**: logos e metadata visual dos times
+- **CSV próprio / Kaggle / exports**: histórico manual para backtest e análises futuras
+- **Fallback local**: seed interna de ratings para o app continuar funcional mesmo sem API
 
-## Estrutura
+## O que já vem pronto
 
-- `app.py`
-- `requirements.txt`
-- `.streamlit/config.toml`
-- `README.md`
+- login e cadastro local com SQLite
+- onboarding premium
+- dashboard estilo SaaS
+- live center
+- matchup studio
+- picks lab
+- bankroll tracker
+- feedback e painel admin
+- diagnóstico de deploy
+
+## Secrets opcionais no Streamlit Cloud
+
+```toml
+BDL_API_KEY = "sua_chave_balldontlie"
+THESPORTSDB_API_KEY = "sua_chave_ou_123"
+APP_ADMIN_EMAIL = "admin@probet.local"
+APP_ADMIN_NAME = "Administrador"
+APP_ADMIN_PASSWORD = "admin123"
+```
 
 ## Deploy
 
-1. Envie os arquivos para o GitHub.
-2. Aponte o Streamlit Cloud para `app.py`.
-3. Faça o deploy.
+1. Suba os arquivos no GitHub.
+2. No Streamlit Cloud, aponte para `app.py`.
+3. Adicione os secrets opcionais.
+4. Faça reboot/redeploy.
 
-## Credenciais administrativas padrão
+## Observação importante
 
-Você pode mudar via Secrets/variáveis de ambiente:
-
-- `APP_ADMIN_EMAIL`
-- `APP_ADMIN_NAME`
-- `APP_ADMIN_PASSWORD`
-
-Padrões locais:
-
-- e-mail: `admin@probet.local`
-- senha: `admin123`
-
-## Observações
-
-- O banco `probet_saas.db` é criado automaticamente.
-- Esta versão foi projetada para rodar sem APIs externas, priorizando estabilidade.
-- Para produção comercial real, o próximo passo é integrar pagamento, recuperação de senha, e-mail transacional e autenticação robusta.
+O app foi desenhado para ser resiliente:
+- se a ESPN falhar, tenta outras camadas;
+- se BALLDONTLIE não estiver configurada, o app continua;
+- se TheSportsDB não responder, apenas os logos podem faltar;
+- se nada externo funcionar, entra o fallback local.
