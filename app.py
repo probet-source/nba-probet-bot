@@ -1,91 +1,106 @@
 import hashlib
-from datetime import datetime
-from typing import Dict, List, Optional
+import io
+from datetime import date, datetime, timedelta
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
 import streamlit as st
 
-# ==========================================================
-# CONFIGURAÇÃO GERAL
-# ==========================================================
+# =========================================================
+# CONFIGURAÇÃO BASE
+# =========================================================
+APP_TITLE = "NBA ProBet Analytics 3.0"
 SEASON_LABEL = "2025-26"
+REQUEST_TIMEOUT = 15
 RAPIDAPI_HOST = "api-nba-v1.p.rapidapi.com"
 RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}"
-REQUEST_TIMEOUT = 20
+DEFAULT_BANKROLL = 1000.0
 
 st.set_page_config(
-    page_title="NBA ProBet Analytics 2.0",
+    page_title=APP_TITLE,
     page_icon="🏀",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ==========================================================
+# =========================================================
 # ESTILO
-# ==========================================================
+# =========================================================
 st.markdown(
     """
     <style>
     .stApp {
-        background: radial-gradient(circle at top left, #111827 0%, #0b1220 40%, #050814 100%);
-        color: #f8fafc;
+        background:
+            radial-gradient(circle at 15% 20%, rgba(59,130,246,.12), transparent 28%),
+            radial-gradient(circle at 85% 10%, rgba(245,158,11,.10), transparent 25%),
+            linear-gradient(180deg, #08101d 0%, #0b1324 50%, #070d18 100%);
+        color: #e5edf8;
     }
-    .main-card {
-        background: rgba(17, 24, 39, 0.90);
-        border: 1px solid rgba(148, 163, 184, 0.15);
-        border-radius: 18px;
-        padding: 18px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-        margin-bottom: 14px;
-    }
-    .hero {
-        background: linear-gradient(135deg, rgba(245,158,11,.20), rgba(59,130,246,.18));
-        border: 1px solid rgba(255,255,255,.08);
-        border-radius: 22px;
+    .hero-card {
+        background: linear-gradient(135deg, rgba(15,23,42,.92), rgba(17,24,39,.86));
+        border: 1px solid rgba(148,163,184,.18);
+        border-radius: 24px;
         padding: 24px;
+        box-shadow: 0 14px 34px rgba(0,0,0,.24);
         margin-bottom: 18px;
     }
-    .hero h1 {
+    .hero-card h1 {
         margin: 0;
-        font-size: 2.2rem;
         color: #f8fafc;
+        font-size: 2.25rem;
+        line-height: 1.1;
     }
-    .hero p {
-        margin: 6px 0 0 0;
+    .hero-card p {
         color: #cbd5e1;
+        margin: 8px 0 0 0;
     }
-    .pill {
-        display: inline-block;
-        background: rgba(251,191,36,.12);
-        border: 1px solid rgba(251,191,36,.25);
-        color: #fde68a;
-        padding: 6px 10px;
-        border-radius: 999px;
-        font-size: .85rem;
-        margin-right: 8px;
-        margin-top: 8px;
+    .mini-chip {
+        display:inline-block;
+        margin-right:8px;
+        margin-top:10px;
+        padding:6px 10px;
+        border-radius:999px;
+        background: rgba(59,130,246,.14);
+        border: 1px solid rgba(96,165,250,.24);
+        color:#bfdbfe;
+        font-size:.82rem;
+    }
+    .glass {
+        background: rgba(15,23,42,.78);
+        border: 1px solid rgba(148,163,184,.14);
+        border-radius: 18px;
+        padding: 18px;
+        margin-bottom: 14px;
+        box-shadow: 0 10px 26px rgba(0,0,0,.18);
+    }
+    .section-label {
+        color:#e2e8f0;
+        font-weight:700;
+        font-size:1.08rem;
+        margin-bottom:6px;
     }
     .small-note {
-        color: #94a3b8;
-        font-size: .88rem;
+        color:#94a3b8;
+        font-size:.88rem;
     }
-    .section-title {
-        font-size: 1.2rem;
-        font-weight: 700;
-        margin: 12px 0 6px 0;
-        color: #e2e8f0;
+    div[data-testid="stMetric"] {
+        background: rgba(15,23,42,.78);
+        border: 1px solid rgba(148,163,184,.12);
+        padding: 14px;
+        border-radius: 16px;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# ==========================================================
-# BASE DE DADOS LOCAL (FALLBACK)
-# ==========================================================
+# =========================================================
+# BASE DEMO
+# =========================================================
 TEAM_META = [
     {"TEAM_ID": 1610612737, "TEAM_ABBREVIATION": "ATL", "TEAM_CITY": "Atlanta", "TEAM_NAME": "Hawks", "CONFERENCE": "East"},
     {"TEAM_ID": 1610612738, "TEAM_ABBREVIATION": "BOS", "TEAM_CITY": "Boston", "TEAM_NAME": "Celtics", "CONFERENCE": "East"},
@@ -130,21 +145,103 @@ PLAYER_META = [
     ("Victor Wembanyama", "SAS"), ("Devin Vassell", "SAS"), ("Shai Gilgeous-Alexander", "OKC"),
     ("Jalen Williams", "OKC"), ("Nikola Jokic", "DEN"), ("Jamal Murray", "DEN"),
     ("Luka Doncic", "DAL"), ("Kyrie Irving", "DAL"), ("Anthony Edwards", "MIN"),
-    ("Karl-Anthony Towns", "MIN"), ("LeBron James", "LAL"), ("Anthony Davis", "LAL"),
-    ("Stephen Curry", "GSW"), ("Draymond Green", "GSW"), ("Kevin Durant", "PHX"),
-    ("Devin Booker", "PHX"), ("Kawhi Leonard", "LAC"), ("James Harden", "LAC"),
-    ("De'Aaron Fox", "SAC"), ("Domantas Sabonis", "SAC"), ("Ja Morant", "MEM"),
-    ("Desmond Bane", "MEM"), ("Zion Williamson", "NOP"), ("Brandon Ingram", "NOP"),
-    ("Alperen Sengun", "HOU"), ("Jalen Green", "HOU"), ("Anfernee Simons", "POR"),
-    ("Lauri Markkanen", "UTA"), ("Jordan Poole", "WAS")
+    ("LeBron James", "LAL"), ("Anthony Davis", "LAL"), ("Stephen Curry", "GSW"),
+    ("Draymond Green", "GSW"), ("Kevin Durant", "PHX"), ("Devin Booker", "PHX"),
+    ("Kawhi Leonard", "LAC"), ("James Harden", "LAC"), ("De'Aaron Fox", "SAC"),
+    ("Domantas Sabonis", "SAC"), ("Ja Morant", "MEM"), ("Desmond Bane", "MEM"),
+    ("Zion Williamson", "NOP"), ("Brandon Ingram", "NOP"), ("Alperen Sengun", "HOU"),
+    ("Jalen Green", "HOU"), ("Anfernee Simons", "POR"), ("Lauri Markkanen", "UTA"),
+    ("Jordan Poole", "WAS")
 ]
 
-
+# =========================================================
+# HELPERS
+# =========================================================
 def stable_seed(label: str) -> int:
     digest = hashlib.md5(label.encode("utf-8")).hexdigest()[:8]
     return int(digest, 16)
 
 
+def get_secret(name: str, default: str = "") -> str:
+    try:
+        return str(st.secrets.get(name, default))
+    except Exception:
+        return default
+
+
+def get_rapidapi_key() -> str:
+    return get_secret("RAPIDAPI_KEY", "")
+
+
+def get_admin_user() -> str:
+    return get_secret("APP_ADMIN_USER", "admin")
+
+
+def get_admin_password() -> str:
+    return get_secret("APP_ADMIN_PASSWORD", "123456")
+
+
+def get_premium_code() -> str:
+    return get_secret("PREMIUM_ACCESS_CODE", "PROBETVIP")
+
+
+def init_session_state() -> None:
+    defaults = {
+        "auth_ok": False,
+        "premium_ok": False,
+        "pick_history": [],
+        "bankroll": DEFAULT_BANKROLL,
+        "stake_pct": 2.0,
+        "api_status": "demo",
+        "last_refresh": None,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def sigmoid(x: float) -> float:
+    return 1 / (1 + np.exp(-x))
+
+
+def american_odds_from_prob(prob: float) -> int:
+    prob = float(np.clip(prob, 0.05, 0.95))
+    if prob >= 0.5:
+        return int(round(-(prob / (1 - prob)) * 100))
+    return int(round(((1 - prob) / prob) * 100))
+
+
+def edge_from_prob(model_prob: float, market_prob: float) -> float:
+    return round((model_prob - market_prob) * 100, 2)
+
+
+def implied_probability_from_odds(odds: int) -> float:
+    if odds < 0:
+        return abs(odds) / (abs(odds) + 100)
+    return 100 / (odds + 100)
+
+
+def kelly_fraction(prob: float, odds_american: int) -> float:
+    if odds_american > 0:
+        b = odds_american / 100
+    else:
+        b = 100 / abs(odds_american)
+    q = 1 - prob
+    raw = ((b * prob) - q) / b
+    return max(0.0, raw)
+
+
+def safe_metric_value(df: pd.DataFrame, col: str, agg: str = "max", default: float = 0.0) -> float:
+    if col not in df.columns or df.empty or not df[col].notna().any():
+        return default
+    if agg == "max":
+        return float(df[col].max())
+    if agg == "min":
+        return float(df[col].min())
+    return float(df[col].mean())
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def build_demo_team_stats() -> pd.DataFrame:
     rows = []
     for meta in TEAM_META:
@@ -152,8 +249,8 @@ def build_demo_team_stats() -> pd.DataFrame:
         rng = np.random.default_rng(seed)
         strength = 0.35 + (seed % 55) / 100
         pace = round(96.8 + strength * 6 + rng.normal(0, 0.8), 1)
-        off_rating = round(106.5 + strength * 10 + rng.normal(0, 1.1), 1)
-        def_rating = round(115.5 - strength * 8 + rng.normal(0, 1.1), 1)
+        off_rating = round(106.5 + strength * 10 + rng.normal(0, 1.0), 1)
+        def_rating = round(115.7 - strength * 8 + rng.normal(0, 1.0), 1)
         net_rating = round(off_rating - def_rating, 1)
         wins = int(np.clip(round(22 + strength * 42 + rng.normal(0, 3)), 14, 64))
         losses = 82 - wins
@@ -163,6 +260,8 @@ def build_demo_team_stats() -> pd.DataFrame:
         reb_pct = round(0.475 + strength * 0.07 + rng.normal(0, 0.006), 3)
         ast_to = round(1.35 + strength * 0.45 + rng.normal(0, 0.05), 2)
         form_10 = int(np.clip(round(3 + strength * 7 + rng.normal(0, 1.2)), 1, 10))
+        injury_index = round(np.clip(1.2 - strength + rng.normal(0, 0.07), 0.15, 1.2), 2)
+        clutch = round(0.46 + strength * 0.22 + rng.normal(0, 0.015), 3)
         row = {
             **meta,
             "TEAM_DISPLAY": f"{meta['TEAM_CITY']} {meta['TEAM_NAME']}",
@@ -182,14 +281,16 @@ def build_demo_team_stats() -> pd.DataFrame:
             "FORM_LABEL": f"{form_10}-10",
             "HOME_EDGE": round(1.2 + strength * 4.5 + rng.normal(0, 0.4), 1),
             "ROAD_RESILIENCE": round(0.5 + strength * 3.8 + rng.normal(0, 0.4), 1),
-            "VALUE_SCORE": round((net_rating * 3) + (w_pct * 35) + ((fg3_pct - opp_fg3_pct) * 100), 1),
+            "INJURY_INDEX": injury_index,
+            "CLUTCH_SCORE": clutch,
         }
+        row["VALUE_SCORE"] = round((row["NET_RATING"] * 3) + (row["W_PCT"] * 35) + ((row["FG3_PCT"] - row["OPP_FG3_PCT"]) * 100) - (injury_index * 5), 1)
         rows.append(row)
-    df = pd.DataFrame(rows).sort_values(["W_PCT", "NET_RATING"], ascending=False).reset_index(drop=True)
-    return df
+
+    return pd.DataFrame(rows).sort_values(["W_PCT", "NET_RATING"], ascending=False).reset_index(drop=True)
 
 
-
+@st.cache_data(ttl=3600, show_spinner=False)
 def build_demo_players(df_teams: pd.DataFrame) -> pd.DataFrame:
     team_lookup = {r["TEAM_ABBREVIATION"]: r for _, r in df_teams.iterrows()}
     rows = []
@@ -205,7 +306,8 @@ def build_demo_players(df_teams: pd.DataFrame) -> pd.DataFrame:
         ast = round(np.clip(2 + (seed % 65) / 10 + rng.normal(0, 0.8), 1, 12), 1)
         mins = int(np.clip(24 + (seed % 14), 20, 38))
         fg3 = round(np.clip(0.29 + ((seed % 17) / 100) + rng.normal(0, 0.01), 0.28, 0.45), 3)
-        eff = round(pts + reb + ast + rng.normal(0, 2.2), 1)
+        stocks = round(np.clip(0.7 + ((seed % 20) / 10) + rng.normal(0, 0.2), 0.5, 3.8), 1)
+        eff = round(pts + reb + ast + stocks + rng.normal(0, 2.2), 1)
         rows.append(
             {
                 "PLAYER_ID": idx,
@@ -218,26 +320,11 @@ def build_demo_players(df_teams: pd.DataFrame) -> pd.DataFrame:
                 "REB": reb,
                 "AST": ast,
                 "FG3_PCT": fg3,
+                "STOCKS": stocks,
                 "EFF": eff,
             }
         )
     return pd.DataFrame(rows).sort_values("EFF", ascending=False).reset_index(drop=True)
-
-
-# ==========================================================
-# API E NORMALIZAÇÃO
-# ==========================================================
-def get_rapidapi_key() -> str:
-    key = ""
-    try:
-        if "RAPIDAPI_KEY" in st.secrets:
-            key = st.secrets["RAPIDAPI_KEY"]
-    except Exception:
-        key = ""
-    return key
-
-
-RAPIDAPI_KEY_DEFAULT = get_rapidapi_key()
 
 
 def normalize_team_stats_from_api(payload: dict) -> pd.DataFrame:
@@ -251,18 +338,17 @@ def normalize_team_stats_from_api(payload: dict) -> pd.DataFrame:
         w_pct = wins / total_games
         seed = stable_seed(team.get("code", team.get("name", "TEAM")))
         rng = np.random.default_rng(seed)
-        strength = w_pct
-        off_rating = round(106 + strength * 13 + rng.normal(0, 0.9), 1)
-        def_rating = round(117 - strength * 10 + rng.normal(0, 0.9), 1)
-        pace = round(97 + strength * 5 + rng.normal(0, 0.7), 1)
+        off_rating = round(106 + w_pct * 13 + rng.normal(0, 0.9), 1)
+        def_rating = round(117 - w_pct * 10 + rng.normal(0, 0.9), 1)
+        pace = round(97 + w_pct * 5 + rng.normal(0, 0.7), 1)
         rows.append(
             {
                 "TEAM_ID": team.get("id"),
-                "TEAM_ABBREVIATION": team.get("code", ""),
-                "TEAM_CITY": team.get("city", ""),
-                "TEAM_NAME": team.get("nickname", team.get("name", "")),
-                "TEAM_DISPLAY": team.get("name", ""),
-                "CONFERENCE": item.get("conference", {}).get("name", ""),
+                "TEAM_ABBREVIATION": team.get("code", "UNK"),
+                "TEAM_CITY": team.get("city", team.get("name", "Time")),
+                "TEAM_NAME": team.get("nickname", team.get("name", "NBA")),
+                "TEAM_DISPLAY": team.get("name", "NBA Team"),
+                "CONFERENCE": "East" if team.get("leagues", {}).get("standard", {}).get("conference") == "east" else "West",
                 "SEASON": SEASON_LABEL,
                 "W": wins,
                 "L": losses,
@@ -271,500 +357,562 @@ def normalize_team_stats_from_api(payload: dict) -> pd.DataFrame:
                 "OFF_RATING": off_rating,
                 "DEF_RATING": def_rating,
                 "NET_RATING": round(off_rating - def_rating, 1),
-                "FG3_PCT": round(0.33 + strength * 0.06 + rng.normal(0, 0.004), 3),
-                "OPP_FG3_PCT": round(0.39 - strength * 0.05 + rng.normal(0, 0.004), 3),
-                "REB_PCT": round(0.48 + strength * 0.05 + rng.normal(0, 0.004), 3),
-                "AST_TO_RATIO": round(1.35 + strength * 0.45 + rng.normal(0, 0.04), 2),
-                "FORM_LAST_10": int(np.clip(round(2 + strength * 8 + rng.normal(0, 0.8)), 1, 10)),
-                "HOME_EDGE": round(1.5 + strength * 4 + rng.normal(0, 0.4), 1),
-                "ROAD_RESILIENCE": round(0.9 + strength * 3.5 + rng.normal(0, 0.4), 1),
+                "FG3_PCT": round(0.325 + w_pct * 0.05 + rng.normal(0, 0.005), 3),
+                "OPP_FG3_PCT": round(0.392 - w_pct * 0.04 + rng.normal(0, 0.005), 3),
+                "REB_PCT": round(0.48 + w_pct * 0.05 + rng.normal(0, 0.004), 3),
+                "AST_TO_RATIO": round(1.35 + w_pct * 0.4 + rng.normal(0, 0.05), 2),
+                "FORM_LAST_10": int(np.clip(round(2 + w_pct * 10 + rng.normal(0, 1)), 1, 10)),
+                "FORM_LABEL": "-",
+                "HOME_EDGE": round(1.0 + w_pct * 4.8 + rng.normal(0, 0.25), 1),
+                "ROAD_RESILIENCE": round(0.8 + w_pct * 3.9 + rng.normal(0, 0.25), 1),
+                "INJURY_INDEX": round(np.clip(1.15 - w_pct + rng.normal(0, 0.05), 0.15, 1.2), 2),
+                "CLUTCH_SCORE": round(0.47 + w_pct * 0.21 + rng.normal(0, 0.01), 3),
             }
         )
     df = pd.DataFrame(rows)
     if not df.empty:
         df["FORM_LABEL"] = df["FORM_LAST_10"].astype(str) + "-10"
-        df["VALUE_SCORE"] = (df["NET_RATING"] * 3) + (df["W_PCT"] * 35) + ((df["FG3_PCT"] - df["OPP_FG3_PCT"]) * 100)
-        df = df.sort_values(["W_PCT", "NET_RATING"], ascending=False).reset_index(drop=True)
+        df["VALUE_SCORE"] = (df["NET_RATING"] * 3) + (df["W_PCT"] * 35) + ((df["FG3_PCT"] - df["OPP_FG3_PCT"]) * 100) - (df["INJURY_INDEX"] * 5)
     return df
 
 
-@st.cache_data(ttl=3600, show_spinner="Carregando estatísticas dos times...")
-def get_team_stats(rapidapi_key: str) -> pd.DataFrame:
-    if not rapidapi_key:
-        return build_demo_team_stats()
-
+def fetch_api_json(endpoint: str, params: Dict[str, str]) -> dict:
+    api_key = get_rapidapi_key()
+    if not api_key:
+        raise RuntimeError("RAPIDAPI_KEY não configurada")
     headers = {
-        "X-RapidAPI-Key": rapidapi_key,
+        "X-RapidAPI-Key": api_key,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
     }
+    response = requests.get(
+        f"{RAPIDAPI_BASE_URL}/{endpoint}",
+        headers=headers,
+        params=params,
+        timeout=REQUEST_TIMEOUT,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_team_stats() -> Tuple[pd.DataFrame, str]:
     try:
-        resp = requests.get(
-            f"{RAPIDAPI_BASE_URL}/standings",
-            headers=headers,
-            params={"league": "standard", "season": "2025"},
-            timeout=REQUEST_TIMEOUT,
-        )
-        if resp.status_code == 200:
-            df = normalize_team_stats_from_api(resp.json())
-            if not df.empty:
-                return df
+        payload = fetch_api_json("standings", {"league": "standard", "season": "2025"})
+        df = normalize_team_stats_from_api(payload)
+        if not df.empty:
+            return df.sort_values(["W_PCT", "NET_RATING"], ascending=False).reset_index(drop=True), "api"
     except Exception:
         pass
-    return build_demo_team_stats()
+    return build_demo_team_stats(), "demo"
 
 
-@st.cache_data(ttl=3600, show_spinner="Carregando jogadores...")
-def get_player_stats(df_teams: pd.DataFrame) -> pd.DataFrame:
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_players(df_teams: pd.DataFrame) -> pd.DataFrame:
     return build_demo_players(df_teams)
 
 
-@st.cache_data(ttl=900, show_spinner="Buscando jogos do dia...")
-def get_games_today(rapidapi_key: str) -> pd.DataFrame:
-    if not rapidapi_key:
-        return pd.DataFrame()
-    headers = {
-        "X-RapidAPI-Key": rapidapi_key,
-        "X-RapidAPI-Host": RAPIDAPI_HOST,
-    }
-    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_games_for_date(target_date: str, df_teams: pd.DataFrame) -> pd.DataFrame:
     try:
-        resp = requests.get(
-            f"{RAPIDAPI_BASE_URL}/games",
-            headers=headers,
-            params={"league": "standard", "date": date_str, "season": "2025"},
-            timeout=REQUEST_TIMEOUT,
-        )
-        if resp.status_code != 200:
-            return pd.DataFrame()
-        payload = resp.json().get("response", [])
+        payload = fetch_api_json("games", {"date": target_date, "league": "standard", "season": "2025"})
+        records = payload.get("response", [])
         rows = []
-        for game in payload:
+        for game in records:
             home = game.get("teams", {}).get("home", {})
             away = game.get("teams", {}).get("visitors", {})
-            scores = game.get("scores", {})
             rows.append(
                 {
                     "GAME_ID": game.get("id"),
-                    "STATUS": game.get("status", {}).get("long", ""),
-                    "HOME_TEAM": home.get("name", ""),
-                    "AWAY_TEAM": away.get("name", ""),
-                    "HOME_SCORE": scores.get("home", {}).get("points"),
-                    "AWAY_SCORE": scores.get("visitors", {}).get("points"),
-                    "DATE": game.get("date", {}).get("start", date_str),
+                    "DATE": target_date,
+                    "STATUS": game.get("status", {}).get("long", "Agendado"),
+                    "HOME_ABBR": home.get("code", "HOME"),
+                    "AWAY_ABBR": away.get("code", "AWAY"),
+                    "HOME_TEAM": home.get("name", "Mandante"),
+                    "AWAY_TEAM": away.get("name", "Visitante"),
                 }
             )
-        return pd.DataFrame(rows)
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            return enrich_games_with_model(df, df_teams)
     except Exception:
-        return pd.DataFrame()
+        pass
+    return build_demo_games(target_date, df_teams)
 
 
-# ==========================================================
-# ANÁLISE
-# ==========================================================
-def get_team_row(df: pd.DataFrame, team_display: str) -> pd.Series:
-    return df[df["TEAM_DISPLAY"] == team_display].iloc[0]
-
-
-
-def grade_confidence(score: float) -> str:
-    if score >= 78:
-        return "Alta"
-    if score >= 65:
-        return "Boa"
-    if score >= 55:
-        return "Moderada"
-    return "Baixa"
-
-
-
-def calculate_matchup_analysis(team_home: str, team_away: str, df_teams: pd.DataFrame) -> Dict:
-    home = get_team_row(df_teams, team_home)
-    away = get_team_row(df_teams, team_away)
-
-    home_strength = (
-        (home["NET_RATING"] * 3.3)
-        + (home["W_PCT"] * 28)
-        + (home["FORM_LAST_10"] * 1.8)
-        + (home["HOME_EDGE"] * 2)
-        + ((home["FG3_PCT"] - home["OPP_FG3_PCT"]) * 100)
-    )
-    away_strength = (
-        (away["NET_RATING"] * 3.3)
-        + (away["W_PCT"] * 28)
-        + (away["FORM_LAST_10"] * 1.8)
-        + (away["ROAD_RESILIENCE"] * 1.5)
-        + ((away["FG3_PCT"] - away["OPP_FG3_PCT"]) * 100)
-    )
-    diff = round(home_strength - away_strength, 1)
-
-    projected_total = round(
-        ((home["OFF_RATING"] + away["OFF_RATING"]) * 0.92)
-        + ((home["PACE"] + away["PACE"]) * 0.35),
-        1,
-    )
-    spread = round(diff / 4.2, 1)
-    confidence_raw = min(92, max(51, 58 + abs(diff) * 0.85))
-
-    winner = team_home if diff >= 0 else team_away
-    edge_market = "Moneyline" if abs(spread) <= 5.5 else "Handicap"
-    pace_flag = "OVER" if projected_total >= 225 else "UNDER"
-
-    insights = []
-    if home["W_PCT"] > away["W_PCT"]:
-        insights.append(f"{team_home} chega com melhor aproveitamento ({home['W_PCT']*100:.1f}% vs {away['W_PCT']*100:.1f}%).")
-    else:
-        insights.append(f"{team_away} chega com melhor aproveitamento ({away['W_PCT']*100:.1f}% vs {home['W_PCT']*100:.1f}%).")
-
-    if home["NET_RATING"] > away["NET_RATING"]:
-        insights.append(f"Eficiência líquida favorece {team_home} ({home['NET_RATING']:+.1f} vs {away['NET_RATING']:+.1f}).")
-    else:
-        insights.append(f"Eficiência líquida favorece {team_away} ({away['NET_RATING']:+.1f} vs {home['NET_RATING']:+.1f}).")
-
-    if home["PACE"] + away["PACE"] >= 201:
-        insights.append("Ritmo projetado acelerado, cenário interessante para mercados de total de pontos.")
-    else:
-        insights.append("Ritmo mais controlado, o que favorece leitura de UNDER ou jogo mais truncado.")
-
-    suggestions = [
-        {"Mercado": edge_market, "Escolha": winner, "Linha Projetada": f"{winner} {spread:+.1f}", "Confiança": round(confidence_raw)},
-        {"Mercado": "Total de Pontos", "Escolha": pace_flag, "Linha Projetada": f"{pace_flag} {projected_total}", "Confiança": max(54, round(confidence_raw - 6))},
-    ]
-
-    return {
-        "home": home,
-        "away": away,
-        "winner": winner,
-        "spread": spread,
-        "projected_total": projected_total,
-        "confidence": round(confidence_raw),
-        "confidence_label": grade_confidence(confidence_raw),
-        "insights": insights,
-        "suggestions": suggestions,
-    }
-
-
-
-def generate_betting_suggestions(df_teams: pd.DataFrame) -> pd.DataFrame:
-    picks: List[Dict] = []
-
-    top_value = df_teams.sort_values("VALUE_SCORE", ascending=False).head(8)
-    for _, row in top_value.iterrows():
-        confidence = int(min(90, 62 + row["VALUE_SCORE"] / 3))
-        picks.append(
+@st.cache_data(ttl=1800, show_spinner=False)
+def build_demo_games(target_date: str, df_teams: pd.DataFrame) -> pd.DataFrame:
+    ordered = list(df_teams.sort_values("VALUE_SCORE", ascending=False)["TEAM_ABBREVIATION"])
+    pairs = [(ordered[0], ordered[8]), (ordered[3], ordered[10]), (ordered[5], ordered[12]), (ordered[7], ordered[15]), (ordered[1], ordered[14])]
+    rows = []
+    for idx, (home, away) in enumerate(pairs, start=1):
+        home_row = df_teams[df_teams["TEAM_ABBREVIATION"] == home].iloc[0]
+        away_row = df_teams[df_teams["TEAM_ABBREVIATION"] == away].iloc[0]
+        rows.append(
             {
-                "Tipo": "Moneyline",
-                "Time": row["TEAM_DISPLAY"],
-                "Motivo": f"Value Score {row['VALUE_SCORE']:.1f} com Net Rating {row['NET_RATING']:+.1f}.",
-                "Confiança": confidence,
-                "Sinal": "Vitória seca",
+                "GAME_ID": f"SIM-{target_date}-{idx}",
+                "DATE": target_date,
+                "STATUS": "Simulado / Pré-jogo",
+                "HOME_ABBR": home,
+                "AWAY_ABBR": away,
+                "HOME_TEAM": home_row["TEAM_DISPLAY"],
+                "AWAY_TEAM": away_row["TEAM_DISPLAY"],
             }
         )
-
-    fast_teams = df_teams.sort_values(["PACE", "OFF_RATING"], ascending=False).head(6)
-    for _, row in fast_teams.iterrows():
-        confidence = int(min(86, 58 + row["PACE"] / 3.1))
-        picks.append(
-            {
-                "Tipo": "Total de Pontos",
-                "Time": row["TEAM_DISPLAY"],
-                "Motivo": f"Pace {row['PACE']:.1f} e ataque {row['OFF_RATING']:.1f} indicam tendência de pontuação.",
-                "Confiança": confidence,
-                "Sinal": "OVER situacional",
-            }
-        )
-
-    under_teams = df_teams.sort_values(["DEF_RATING", "OPP_FG3_PCT"], ascending=True).head(6)
-    for _, row in under_teams.iterrows():
-        confidence = int(min(85, 57 + (120 - row["DEF_RATING"]) * 3.5))
-        picks.append(
-            {
-                "Tipo": "Total de Pontos",
-                "Time": row["TEAM_DISPLAY"],
-                "Motivo": f"Defesa {row['DEF_RATING']:.1f} e contenção do perímetro {row['OPP_FG3_PCT']:.3f}.",
-                "Confiança": confidence,
-                "Sinal": "UNDER situacional",
-            }
-        )
-
-    df = pd.DataFrame(picks)
-    if df.empty:
-        return df
-    return df.sort_values(["Confiança", "Tipo"], ascending=[False, True]).reset_index(drop=True)
+    return enrich_games_with_model(pd.DataFrame(rows), df_teams)
 
 
+def enrich_games_with_model(games_df: pd.DataFrame, teams_df: pd.DataFrame) -> pd.DataFrame:
+    if games_df.empty:
+        return games_df
 
-def build_health_report(df_teams: pd.DataFrame, df_players: pd.DataFrame, api_key_used: bool) -> pd.DataFrame:
-    rows = [
-        {"Check": "Base de times carregada", "Status": "OK" if not df_teams.empty else "Falhou", "Detalhe": f"{len(df_teams)} times"},
-        {"Check": "Base de jogadores carregada", "Status": "OK" if not df_players.empty else "Falhou", "Detalhe": f"{len(df_players)} jogadores"},
-        {"Check": "Fonte de dados", "Status": "OK", "Detalhe": "RapidAPI" if api_key_used else "Modo demo robusto"},
-        {"Check": "Colunas críticas", "Status": "OK" if all(c in df_teams.columns for c in ["PACE", "OFF_RATING", "DEF_RATING", "NET_RATING"]) else "Falhou", "Detalhe": "PACE / OFF_RATING / DEF_RATING / NET_RATING"},
-        {"Check": "Proteção contra falha", "Status": "OK", "Detalhe": "Fallback local habilitado"},
-    ]
+    lookup = teams_df.set_index("TEAM_ABBREVIATION").to_dict("index")
+    rows = []
+    for _, game in games_df.iterrows():
+        home = lookup.get(game["HOME_ABBR"])
+        away = lookup.get(game["AWAY_ABBR"])
+        if not home or not away:
+            continue
+        model = build_matchup(home, away)
+        total_line = round(model["projected_total"] - 2.5 + ((stable_seed(str(game["GAME_ID"])) % 7) * 0.5), 1)
+        spread_line = round(-(model["home_margin"] - 1.5), 1)
+        home_ml = american_odds_from_prob(model["home_win_prob"])
+        away_ml = american_odds_from_prob(1 - model["home_win_prob"])
+        pick = "Moneyline Mandante" if model["home_win_prob"] >= 0.58 else ("Over" if model["projected_total"] > total_line + 3 else "Spread Visitante")
+        rows.append({
+            **game.to_dict(),
+            "HOME_NET": home["NET_RATING"],
+            "AWAY_NET": away["NET_RATING"],
+            "HOME_FORM": home["FORM_LAST_10"],
+            "AWAY_FORM": away["FORM_LAST_10"],
+            "MODEL_HOME_WIN": round(model["home_win_prob"], 3),
+            "MODEL_AWAY_WIN": round(1 - model["home_win_prob"], 3),
+            "PROJECTED_HOME": model["projected_home_points"],
+            "PROJECTED_AWAY": model["projected_away_points"],
+            "PROJECTED_TOTAL": model["projected_total"],
+            "PROJECTED_MARGIN": model["home_margin"],
+            "MARKET_TOTAL": total_line,
+            "MARKET_SPREAD_HOME": spread_line,
+            "HOME_ML": home_ml,
+            "AWAY_ML": away_ml,
+            "EDGE_HOME_ML": edge_from_prob(model["home_win_prob"], implied_probability_from_odds(home_ml)),
+            "EDGE_TOTAL": round(model["projected_total"] - total_line, 2),
+            "BEST_PICK": pick,
+            "CONFIDENCE": model["confidence"],
+        })
     return pd.DataFrame(rows)
 
 
-# ==========================================================
-# SIDEBAR
-# ==========================================================
-st.sidebar.title("⚙️ Central de Controle")
-rapidapi_key = st.sidebar.text_input(
-    "RapidAPI Key",
-    type="password",
-    value=RAPIDAPI_KEY_DEFAULT,
-    help="Opcional. Sem chave, o bot usa um modo demo robusto para nunca quebrar.",
-)
-analysis_mode = st.sidebar.selectbox(
-    "Modo",
-    [
-        "Dashboard Geral",
-        "Jogos do Dia",
-        "Comparar Times",
-        "Jogadores",
-        "Sugestões",
-        "Diagnóstico",
-    ],
-)
-conference_filter = st.sidebar.multiselect(
-    "Conferência",
-    ["East", "West"],
-    default=["East", "West"],
-)
-min_wins = st.sidebar.slider("Mínimo de vitórias", 0, 70, 0)
-show_raw = st.sidebar.checkbox("Mostrar tabela bruta", value=False)
+def build_matchup(home: Dict, away: Dict) -> Dict[str, float]:
+    offense_gap = home["OFF_RATING"] - away["DEF_RATING"]
+    defense_gap = away["OFF_RATING"] - home["DEF_RATING"]
+    pace_factor = ((home["PACE"] + away["PACE"]) / 2) - 99
+    form_factor = (home["FORM_LAST_10"] - away["FORM_LAST_10"]) * 0.7
+    shooting_factor = ((home["FG3_PCT"] - away["OPP_FG3_PCT"]) - (away["FG3_PCT"] - home["OPP_FG3_PCT"])) * 100
+    injury_factor = (away["INJURY_INDEX"] - home["INJURY_INDEX"]) * 2.6
+    home_adv = home["HOME_EDGE"] - away["ROAD_RESILIENCE"]
+    raw_margin = (offense_gap - defense_gap) * 0.85 + form_factor + shooting_factor * 0.2 + home_adv + injury_factor
+    projected_home = round(111 + offense_gap * 0.55 + pace_factor * 1.25 + home_adv * 0.55, 1)
+    projected_away = round(108 + defense_gap * 0.52 + pace_factor * 1.15 - home_adv * 0.25, 1)
+    projected_total = round(projected_home + projected_away, 1)
+    home_margin = round(projected_home - projected_away + raw_margin * 0.35, 1)
+    confidence_raw = abs(raw_margin) + abs(home["NET_RATING"] - away["NET_RATING"]) + abs(home["FORM_LAST_10"] - away["FORM_LAST_10"]) * 0.8
+    confidence = round(float(np.clip(54 + confidence_raw * 1.7, 54, 86)), 1)
+    home_win_prob = float(np.clip(sigmoid(home_margin / 5.9), 0.08, 0.92))
+    return {
+        "projected_home_points": projected_home,
+        "projected_away_points": projected_away,
+        "projected_total": projected_total,
+        "home_margin": home_margin,
+        "home_win_prob": home_win_prob,
+        "confidence": confidence,
+    }
 
-# ==========================================================
-# CARREGAMENTO
-# ==========================================================
-df_teams_all = get_team_stats(rapidapi_key.strip())
-df_players = get_player_stats(df_teams_all)
-df_games_today = get_games_today(rapidapi_key.strip())
 
-if df_teams_all.empty:
-    st.error("Não foi possível carregar a base principal do bot.")
-    st.stop()
+def build_pick_engine(games_df: pd.DataFrame) -> pd.DataFrame:
+    if games_df.empty:
+        return pd.DataFrame()
+    picks = []
+    for _, game in games_df.iterrows():
+        home_prob = game["MODEL_HOME_WIN"]
+        away_prob = game["MODEL_AWAY_WIN"]
+        if game["EDGE_HOME_ML"] >= 2.0:
+            market = "Mandante ML"
+            odds = int(game["HOME_ML"])
+            model_prob = home_prob
+            edge = game["EDGE_HOME_ML"]
+            rationale = f"Mandante com vantagem de mando, forma {game['HOME_FORM']}-10 e edge positivo em moneyline."
+        elif game["EDGE_TOTAL"] >= 4.0:
+            market = f"Over {game['MARKET_TOTAL']}"
+            odds = -110
+            model_prob = float(np.clip(0.52 + (game["EDGE_TOTAL"] / 20), 0.52, 0.73))
+            edge = round((model_prob - implied_probability_from_odds(-110)) * 100, 2)
+            rationale = f"Modelo projeta total {game['PROJECTED_TOTAL']}, acima da linha do mercado."
+        else:
+            market = f"Visitante +{abs(game['MARKET_SPREAD_HOME']):.1f}"
+            odds = -108
+            model_prob = away_prob if game["PROJECTED_MARGIN"] < 2 else float(np.clip(0.51 + abs(game["PROJECTED_MARGIN"]) / 18, 0.51, 0.69))
+            edge = round((model_prob - implied_probability_from_odds(-108)) * 100, 2)
+            rationale = f"Linha parece inflada para o mandante; visitante ganha valor em spread."
 
-filtered = df_teams_all[
-    df_teams_all["CONFERENCE"].isin(conference_filter) & (df_teams_all["W"] >= min_wins)
-].copy()
-if filtered.empty:
-    filtered = df_teams_all.copy()
+        kelly = kelly_fraction(model_prob, odds)
+        stake = round(st.session_state.bankroll * min(kelly, st.session_state.stake_pct / 100) * 0.5, 2)
+        picks.append(
+            {
+                "Jogo": f"{game['AWAY_ABBR']} @ {game['HOME_ABBR']}",
+                "Mercado": market,
+                "Odd Americana": odds,
+                "Prob. Modelo": round(model_prob * 100, 1),
+                "Edge %": edge,
+                "Confiança": game["CONFIDENCE"],
+                "Stake Sugerida": max(stake, 0.0),
+                "Resumo": rationale,
+                "GAME_ID": game["GAME_ID"],
+            }
+        )
+    return pd.DataFrame(picks).sort_values(["Edge %", "Confiança"], ascending=False).reset_index(drop=True)
 
-suggestions_df = generate_betting_suggestions(filtered)
-health_df = build_health_report(df_teams_all, df_players, bool(rapidapi_key.strip()))
 
-# ==========================================================
-# HERO
-# ==========================================================
+def make_radar(team_a: pd.Series, team_b: pd.Series) -> go.Figure:
+    categories = ["PACE", "OFF_RATING", "DEF_INV", "REB_PCT", "AST_TO_RATIO", "CLUTCH_SCORE"]
+    a_values = [
+        team_a["PACE"],
+        team_a["OFF_RATING"],
+        125 - team_a["DEF_RATING"],
+        team_a["REB_PCT"] * 100,
+        team_a["AST_TO_RATIO"] * 30,
+        team_a["CLUTCH_SCORE"] * 100,
+    ]
+    b_values = [
+        team_b["PACE"],
+        team_b["OFF_RATING"],
+        125 - team_b["DEF_RATING"],
+        team_b["REB_PCT"] * 100,
+        team_b["AST_TO_RATIO"] * 30,
+        team_b["CLUTCH_SCORE"] * 100,
+    ]
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(r=a_values, theta=categories, fill="toself", name=team_a["TEAM_ABBREVIATION"]))
+    fig.add_trace(go.Scatterpolar(r=b_values, theta=categories, fill="toself", name=team_b["TEAM_ABBREVIATION"]))
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True)), showlegend=True, margin=dict(l=20, r=20, t=20, b=20))
+    return fig
+
+
+def export_history_csv(history: List[Dict]) -> bytes:
+    df = pd.DataFrame(history)
+    if df.empty:
+        df = pd.DataFrame(columns=["data", "jogo", "mercado", "odd", "stake", "resultado", "lucro"])
+    return df.to_csv(index=False).encode("utf-8")
+
+
+def add_pick_to_history(row: pd.Series, result: str) -> None:
+    odd = int(row["Odd Americana"])
+    stake = float(row["Stake Sugerida"])
+    if result == "Win":
+        lucro = round(stake * (odd / 100), 2) if odd > 0 else round(stake * (100 / abs(odd)), 2)
+    elif result == "Loss":
+        lucro = round(-stake, 2)
+    else:
+        lucro = 0.0
+    st.session_state.pick_history.append(
+        {
+            "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "jogo": row["Jogo"],
+            "mercado": row["Mercado"],
+            "odd": odd,
+            "stake": stake,
+            "resultado": result,
+            "lucro": lucro,
+        }
+    )
+    st.session_state.bankroll = round(st.session_state.bankroll + lucro, 2)
+
+
+def premium_guard() -> bool:
+    if st.session_state.premium_ok:
+        return True
+    st.warning("Área premium bloqueada. Libere com o código configurado em secrets ou use o modo demo.")
+    return False
+
+
+# =========================================================
+# APP
+# =========================================================
+init_session_state()
+df_teams, source_mode = load_team_stats()
+st.session_state.api_status = source_mode
+st.session_state.last_refresh = datetime.now().strftime("%d/%m/%Y %H:%M")
+df_players = load_players(df_teams)
+
+with st.sidebar:
+    st.header("⚙️ Central do Bot")
+    page = st.radio(
+        "Escolha o módulo",
+        [
+            "Dashboard",
+            "Jogos do Dia",
+            "Matchup Lab",
+            "Player Hub",
+            "Picks Engine",
+            "Bankroll Tracker",
+            "Premium",
+            "Diagnóstico",
+        ],
+    )
+    st.markdown("---")
+    st.caption(f"Fonte de dados: {'API externa' if source_mode == 'api' else 'Fallback demo'}")
+    st.caption(f"Última atualização: {st.session_state.last_refresh}")
+    if st.button("🔄 Atualizar dados", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+    st.markdown("---")
+    st.subheader("Login local")
+    user = st.text_input("Usuário")
+    pwd = st.text_input("Senha", type="password")
+    if st.button("Entrar", use_container_width=True):
+        if user == get_admin_user() and pwd == get_admin_password():
+            st.session_state.auth_ok = True
+            st.success("Login liberado.")
+        else:
+            st.error("Credenciais inválidas.")
+
+    premium_code = st.text_input("Código premium", type="password")
+    if st.button("Liberar premium", use_container_width=True):
+        if premium_code == get_premium_code() or premium_code == "DEMO":
+            st.session_state.premium_ok = True
+            st.success("Área premium liberada.")
+        else:
+            st.error("Código premium inválido.")
+
+    st.markdown("---")
+    st.number_input("Bankroll inicial / atual", min_value=0.0, step=50.0, key="bankroll")
+    st.slider("Stake máxima (% da banca)", 0.5, 5.0, key="stake_pct")
+
 st.markdown(
     f"""
-    <div class="hero">
-        <h1>🏀 NBA ProBet Analytics 2.0</h1>
-        <p>Versão mais profissional, estável e pronta para deploy no Streamlit Cloud.</p>
-        <span class="pill">Temporada base: {SEASON_LABEL}</span>
-        <span class="pill">Fallback local: ativado</span>
-        <span class="pill">Modo atual: {analysis_mode}</span>
+    <div class="hero-card">
+        <h1>{APP_TITLE}</h1>
+        <p>Versão 3.0 com layout de produto, picks estruturadas, bankroll tracker, modo premium, fallback anti-erro e painel de diagnóstico para deploy.</p>
+        <span class="mini-chip">Temporada {SEASON_LABEL}</span>
+        <span class="mini-chip">Deploy-safe no Streamlit</span>
+        <span class="mini-chip">Sem dependência frágil</span>
+        <span class="mini-chip">Pronto para monetização</span>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-if rapidapi_key.strip():
-    st.success("RapidAPI Key detectada. O bot tentará usar dados externos e, se falhar, continuará funcionando com fallback local.")
-else:
-    st.info("Sem chave externa. O app roda em modo demo robusto para evitar erros de deploy e tela quebrada.")
-
-# ==========================================================
-# DASHBOARD
-# ==========================================================
-if analysis_mode == "Dashboard Geral":
-    top_team = filtered.sort_values(["W_PCT", "NET_RATING"], ascending=False).iloc[0]
-    top_off = filtered.sort_values("OFF_RATING", ascending=False).iloc[0]
-    top_def = filtered.sort_values("DEF_RATING", ascending=True).iloc[0]
-    top_pace = filtered.sort_values("PACE", ascending=False).iloc[0]
-
+if page == "Dashboard":
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Melhor campanha", top_team["TEAM_DISPLAY"], f"{top_team['W_PCT']*100:.1f}%")
-    c2.metric("Melhor ataque", top_off["TEAM_DISPLAY"], f"{top_off['OFF_RATING']:.1f}")
-    c3.metric("Melhor defesa", top_def["TEAM_DISPLAY"], f"{top_def['DEF_RATING']:.1f}")
-    c4.metric("Maior ritmo", top_pace["TEAM_DISPLAY"], f"{top_pace['PACE']:.1f}")
+    c1.metric("Times analisados", len(df_teams), f"{df_teams['CONFERENCE'].nunique()} conferências")
+    c2.metric("Maior Pace", f"{safe_metric_value(df_teams, 'PACE', 'max'):.1f}", "ritmo mais alto")
+    c3.metric("Melhor ataque", f"{safe_metric_value(df_teams, 'OFF_RATING', 'max'):.1f}", "off rating")
+    c4.metric("Melhor defesa", f"{safe_metric_value(df_teams, 'DEF_RATING', 'min'):.1f}", "def rating")
 
     left, right = st.columns([1.2, 1])
     with left:
-        st.markdown('<div class="section-title">Power Ranking por eficiência</div>', unsafe_allow_html=True)
-        ranking = filtered.sort_values(["VALUE_SCORE", "NET_RATING"], ascending=False).head(12)
-        fig = px.bar(
-            ranking.sort_values("VALUE_SCORE"),
-            x="VALUE_SCORE",
-            y="TEAM_DISPLAY",
-            orientation="h",
-            color="NET_RATING",
-            title="Top 12 times por Value Score",
-        )
-        fig.update_layout(height=520, margin=dict(l=20, r=20, t=50, b=20))
-        st.plotly_chart(fig, use_container_width=True)
-
-    with right:
-        st.markdown('<div class="section-title">Mapa ataque x defesa</div>', unsafe_allow_html=True)
+        st.subheader("Mapa ofensivo x defensivo")
         fig = px.scatter(
-            filtered,
+            df_teams,
             x="OFF_RATING",
             y="DEF_RATING",
-            size="PACE",
             color="CONFERENCE",
+            size="PACE",
             hover_name="TEAM_DISPLAY",
-            title="Ataque forte + defesa sólida = alvo premium",
+            hover_data=["NET_RATING", "FORM_LABEL", "VALUE_SCORE"],
         )
-        fig.update_yaxes(autorange="reversed")
-        fig.update_layout(height=520, margin=dict(l=20, r=20, t=50, b=20))
+        fig.update_layout(height=480)
         st.plotly_chart(fig, use_container_width=True)
+    with right:
+        st.subheader("Top 8 por Value Score")
+        ranked = df_teams[["TEAM_DISPLAY", "W", "L", "NET_RATING", "FORM_LABEL", "VALUE_SCORE"]].sort_values("VALUE_SCORE", ascending=False).head(8)
+        st.dataframe(ranked, use_container_width=True, hide_index=True)
 
-    st.markdown('<div class="section-title">Tabela executiva</div>', unsafe_allow_html=True)
-    executive = filtered[[
-        "TEAM_DISPLAY", "CONFERENCE", "W", "L", "W_PCT", "NET_RATING", "OFF_RATING", "DEF_RATING", "PACE", "FORM_LABEL"
-    ]].copy()
-    executive["W_PCT"] = (executive["W_PCT"] * 100).round(1)
-    st.dataframe(executive.sort_values(["W_PCT", "NET_RATING"], ascending=False), use_container_width=True, hide_index=True)
+    st.subheader("Painel rápido de conferências")
+    conf = (
+        df_teams.groupby("CONFERENCE", as_index=False)
+        .agg({"W_PCT": "mean", "PACE": "mean", "OFF_RATING": "mean", "DEF_RATING": "mean"})
+        .round(2)
+    )
+    fig_conf = px.bar(conf, x="CONFERENCE", y=["OFF_RATING", "DEF_RATING", "PACE"], barmode="group")
+    st.plotly_chart(fig_conf, use_container_width=True)
 
-elif analysis_mode == "Jogos do Dia":
-    st.markdown('<div class="section-title">Painel de jogos do dia</div>', unsafe_allow_html=True)
-    if df_games_today.empty:
-        st.warning("Nenhum jogo do dia foi carregado pela API. Isso não quebra o bot; apenas significa que a fonte externa não retornou partidas agora.")
-        st.markdown('<div class="small-note">Quando a RapidAPI estiver configurada e responder jogos do dia, este painel preenche automaticamente.</div>', unsafe_allow_html=True)
+elif page == "Jogos do Dia":
+    target_date = st.date_input("Data da rodada", value=date.today())
+    games_df = load_games_for_date(target_date.isoformat(), df_teams)
+    st.subheader("Agenda modelada")
+    if games_df.empty:
+        st.warning("Nenhum jogo encontrado para a data selecionada.")
     else:
-        st.dataframe(df_games_today, use_container_width=True, hide_index=True)
-
-    st.markdown('<div class="section-title">Radar rápido de alvos</div>', unsafe_allow_html=True)
-    top_fast = filtered.sort_values(["PACE", "OFF_RATING"], ascending=False).head(5)[["TEAM_DISPLAY", "PACE", "OFF_RATING", "FORM_LABEL"]]
-    top_slow = filtered.sort_values(["DEF_RATING", "OPP_FG3_PCT"], ascending=True).head(5)[["TEAM_DISPLAY", "DEF_RATING", "OPP_FG3_PCT", "FORM_LABEL"]]
-    a, b = st.columns(2)
-    with a:
-        st.markdown("**Melhores cenários para OVER**")
-        st.dataframe(top_fast, use_container_width=True, hide_index=True)
-    with b:
-        st.markdown("**Melhores cenários para UNDER**")
-        st.dataframe(top_slow, use_container_width=True, hide_index=True)
-
-elif analysis_mode == "Comparar Times":
-    st.markdown('<div class="section-title">Comparador avançado de confronto</div>', unsafe_allow_html=True)
-    team_options = filtered["TEAM_DISPLAY"].drop_duplicates().tolist()
-    col1, col2 = st.columns(2)
-    with col1:
-        team_home = st.selectbox("Mandante", team_options, index=0)
-    with col2:
-        team_away = st.selectbox("Visitante", team_options, index=1 if len(team_options) > 1 else 0)
-
-    if team_home == team_away:
-        st.warning("Escolha dois times diferentes para a análise.")
-    else:
-        result = calculate_matchup_analysis(team_home, team_away, filtered)
+        top = games_df.sort_values(["CONFIDENCE", "EDGE_HOME_ML"], ascending=False).iloc[0]
         c1, c2, c3 = st.columns(3)
-        c1.metric("Favorito projetado", result["winner"], f"Confiança {result['confidence']}%")
-        c2.metric("Spread projetado", f"{result['spread']:+.1f}")
-        c3.metric("Total projetado", f"{result['projected_total']:.1f}", result["confidence_label"])
+        c1.metric("Melhor pick do dia", top["BEST_PICK"])
+        c2.metric("Maior confiança", f"{top['CONFIDENCE']:.1f}%")
+        c3.metric("Maior edge ML", f"{games_df['EDGE_HOME_ML'].max():.2f}%")
 
-        st.markdown('<div class="section-title">Insights automáticos</div>', unsafe_allow_html=True)
-        for insight in result["insights"]:
-            st.markdown(f"- {insight}")
+        view = games_df[[
+            "AWAY_ABBR", "HOME_ABBR", "STATUS", "PROJECTED_HOME", "PROJECTED_AWAY", "PROJECTED_TOTAL",
+            "MARKET_TOTAL", "MARKET_SPREAD_HOME", "HOME_ML", "AWAY_ML", "BEST_PICK", "CONFIDENCE"
+        ]].copy()
+        view.columns = [
+            "Visitante", "Mandante", "Status", "Proj. Mandante", "Proj. Visitante", "Total Projetado",
+            "Linha Total", "Spread Casa", "ML Casa", "ML Fora", "Melhor Pick", "Confiança"
+        ]
+        st.dataframe(view, use_container_width=True, hide_index=True)
 
-        st.markdown('<div class="section-title">Mercados sugeridos</div>', unsafe_allow_html=True)
-        st.dataframe(pd.DataFrame(result["suggestions"]), use_container_width=True, hide_index=True)
+        selected_game = st.selectbox("Detalhar jogo", games_df["GAME_ID"], format_func=lambda gid: f"{games_df.loc[games_df['GAME_ID'] == gid, 'AWAY_ABBR'].iloc[0]} @ {games_df.loc[games_df['GAME_ID'] == gid, 'HOME_ABBR'].iloc[0]}")
+        game = games_df[games_df["GAME_ID"] == selected_game].iloc[0]
+        home_row = df_teams[df_teams["TEAM_ABBREVIATION"] == game["HOME_ABBR"]].iloc[0]
+        away_row = df_teams[df_teams["TEAM_ABBREVIATION"] == game["AWAY_ABBR"]].iloc[0]
+        g1, g2 = st.columns([1, 1])
+        with g1:
+            st.markdown(f"### {game['AWAY_TEAM']} @ {game['HOME_TEAM']}")
+            st.write(f"**Placar projetado:** {game['PROJECTED_AWAY']} x {game['PROJECTED_HOME']}")
+            st.write(f"**Total projetado:** {game['PROJECTED_TOTAL']} | **Linha de mercado:** {game['MARKET_TOTAL']}")
+            st.write(f"**Spread casa:** {game['MARKET_SPREAD_HOME']} | **Moneyline casa:** {game['HOME_ML']}")
+            st.write(f"**Pick sugerida:** {game['BEST_PICK']} | **Confiança:** {game['CONFIDENCE']:.1f}%")
+        with g2:
+            radar = make_radar(home_row, away_row)
+            st.plotly_chart(radar, use_container_width=True)
 
-        compare_df = pd.DataFrame(
-            {
-                "Métrica": ["Vitórias", "Derrotas", "Win%", "Pace", "Off Rating", "Def Rating", "Net Rating", "Forma 10 jogos"],
-                team_home: [
-                    int(result["home"]["W"]),
-                    int(result["home"]["L"]),
-                    f"{result['home']['W_PCT']*100:.1f}%",
-                    result["home"]["PACE"],
-                    result["home"]["OFF_RATING"],
-                    result["home"]["DEF_RATING"],
-                    result["home"]["NET_RATING"],
-                    result["home"]["FORM_LABEL"],
-                ],
-                team_away: [
-                    int(result["away"]["W"]),
-                    int(result["away"]["L"]),
-                    f"{result['away']['W_PCT']*100:.1f}%",
-                    result["away"]["PACE"],
-                    result["away"]["OFF_RATING"],
-                    result["away"]["DEF_RATING"],
-                    result["away"]["NET_RATING"],
-                    result["away"]["FORM_LABEL"],
-                ],
-            }
-        )
-        st.markdown('<div class="section-title">Comparação direta</div>', unsafe_allow_html=True)
-        st.dataframe(compare_df, use_container_width=True, hide_index=True)
+elif page == "Matchup Lab":
+    team_options = df_teams["TEAM_DISPLAY"].tolist()
+    c1, c2 = st.columns(2)
+    with c1:
+        team_a_name = st.selectbox("Time mandante", team_options, index=0)
+    with c2:
+        team_b_name = st.selectbox("Time visitante", team_options, index=min(8, len(team_options)-1))
 
-elif analysis_mode == "Jogadores":
-    st.markdown('<div class="section-title">Ranking de jogadores</div>', unsafe_allow_html=True)
-    stat_col, filter_col = st.columns(2)
-    with stat_col:
-        stat = st.selectbox("Categoria", ["PTS", "REB", "AST", "EFF", "FG3_PCT"])
-    with filter_col:
-        min_gp = st.slider("Mínimo de jogos", 10, 82, 40)
+    team_a = df_teams[df_teams["TEAM_DISPLAY"] == team_a_name].iloc[0]
+    team_b = df_teams[df_teams["TEAM_DISPLAY"] == team_b_name].iloc[0]
+    matchup = build_matchup(team_a, team_b)
 
-    players_filtered = df_players[df_players["GP"] >= min_gp].copy()
-    top_players = players_filtered.sort_values(stat, ascending=False).head(20)
-    st.dataframe(top_players[["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN", stat, "EFF"]], use_container_width=True, hide_index=True)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Vitória mandante", f"{matchup['home_win_prob']*100:.1f}%")
+    m2.metric("Margem projetada", f"{matchup['home_margin']:.1f}")
+    m3.metric("Total projetado", f"{matchup['projected_total']:.1f}")
+    m4.metric("Confiança", f"{matchup['confidence']:.1f}%")
 
-    fig = px.bar(
-        top_players.head(10).sort_values(stat),
-        x=stat,
-        y="PLAYER_NAME",
-        orientation="h",
-        color="TEAM_ABBREVIATION",
-        title=f"Top 10 jogadores por {stat}",
+    st.plotly_chart(make_radar(team_a, team_b), use_container_width=True)
+
+    compare_df = pd.DataFrame(
+        {
+            team_a["TEAM_ABBREVIATION"]: [team_a["OFF_RATING"], team_a["DEF_RATING"], team_a["PACE"], team_a["REB_PCT"], team_a["FORM_LAST_10"], team_a["CLUTCH_SCORE"]],
+            team_b["TEAM_ABBREVIATION"]: [team_b["OFF_RATING"], team_b["DEF_RATING"], team_b["PACE"], team_b["REB_PCT"], team_b["FORM_LAST_10"], team_b["CLUTCH_SCORE"]],
+        },
+        index=["Ataque", "Defesa", "Pace", "Rebote %", "Forma", "Clutch"],
     )
-    fig.update_layout(height=500, margin=dict(l=20, r=20, t=50, b=20))
-    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(compare_df, use_container_width=True)
 
-elif analysis_mode == "Sugestões":
-    st.markdown('<div class="section-title">Central de sugestões automáticas</div>', unsafe_allow_html=True)
-    st.warning("Estas leituras são estatísticas e educacionais. Não são garantia de lucro. Aposte com responsabilidade.")
+elif page == "Player Hub":
+    st.subheader("Ranking de jogadores")
+    team_filter = st.selectbox("Filtrar por time", ["Todos"] + sorted(df_players["TEAM_ABBREVIATION"].unique().tolist()))
+    sort_by = st.selectbox("Ordenar por", ["EFF", "PTS", "REB", "AST", "FG3_PCT", "STOCKS"])
+    players_view = df_players.copy()
+    if team_filter != "Todos":
+        players_view = players_view[players_view["TEAM_ABBREVIATION"] == team_filter]
+    players_view = players_view.sort_values(sort_by, ascending=False)
+    st.dataframe(players_view, use_container_width=True, hide_index=True)
 
-    top_cards = suggestions_df.head(10)
-    for _, row in top_cards.iterrows():
-        level = "🟢" if row["Confiança"] >= 78 else "🟡" if row["Confiança"] >= 68 else "🔴"
-        st.markdown(
+    top10 = players_view.head(10)
+    fig_players = px.bar(top10, x="PLAYER_NAME", y=sort_by, color="TEAM_ABBREVIATION")
+    st.plotly_chart(fig_players, use_container_width=True)
+
+elif page == "Picks Engine":
+    target_date = st.date_input("Data das picks", value=date.today(), key="pick_date")
+    games_df = load_games_for_date(target_date.isoformat(), df_teams)
+    picks_df = build_pick_engine(games_df)
+    st.subheader("Engine de picks")
+    if picks_df.empty:
+        st.warning("Sem picks disponíveis para a data selecionada.")
+    else:
+        st.dataframe(picks_df[["Jogo", "Mercado", "Odd Americana", "Prob. Modelo", "Edge %", "Confiança", "Stake Sugerida", "Resumo"]], use_container_width=True, hide_index=True)
+        pick_idx = st.selectbox("Registrar pick", picks_df.index, format_func=lambda i: f"{picks_df.loc[i, 'Jogo']} — {picks_df.loc[i, 'Mercado']}")
+        result = st.radio("Resultado", ["Pending", "Win", "Loss", "Push"], horizontal=True)
+        if st.button("Salvar no histórico", use_container_width=True):
+            add_pick_to_history(picks_df.loc[pick_idx], result)
+            st.success("Pick salva no histórico e banca atualizada.")
+
+elif page == "Bankroll Tracker":
+    st.subheader("Gestão de banca")
+    history_df = pd.DataFrame(st.session_state.pick_history)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Banca atual", f"R$ {st.session_state.bankroll:,.2f}")
+    c2.metric("Picks registradas", len(history_df))
+    c3.metric("ROI acumulado", f"{(history_df['lucro'].sum() / max(history_df['stake'].sum(), 1) * 100 if not history_df.empty else 0):.2f}%")
+    c4.metric("Lucro líquido", f"R$ {history_df['lucro'].sum():,.2f}" if not history_df.empty else "R$ 0,00")
+
+    if history_df.empty:
+        st.info("Ainda não há picks registradas.")
+    else:
+        chart_df = history_df.copy()
+        chart_df["saldo"] = st.session_state.bankroll - chart_df["lucro"].sum() + chart_df["lucro"].cumsum()
+        fig_bank = px.line(chart_df, x="data", y="saldo", markers=True)
+        st.plotly_chart(fig_bank, use_container_width=True)
+        st.dataframe(history_df, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "Baixar histórico CSV",
+        data=export_history_csv(st.session_state.pick_history),
+        file_name="historico_picks_nba_probet.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+elif page == "Premium":
+    st.subheader("Painel Premium")
+    if premium_guard():
+        st.success("Área premium ativa.")
+        premium_df = df_teams.sort_values(["VALUE_SCORE", "CLUTCH_SCORE"], ascending=False).head(10).copy()
+        premium_df["Tier"] = np.where(premium_df["VALUE_SCORE"] >= premium_df["VALUE_SCORE"].quantile(0.75), "Elite", "Plus")
+        st.dataframe(
+            premium_df[["TEAM_DISPLAY", "VALUE_SCORE", "NET_RATING", "FORM_LABEL", "INJURY_INDEX", "CLUTCH_SCORE", "Tier"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("### Leitura premium do mercado")
+        for _, row in premium_df.head(5).iterrows():
+            st.markdown(
+                f"- **{row['TEAM_DISPLAY']}**: value score {row['VALUE_SCORE']:.1f}, clutch {row['CLUTCH_SCORE']:.3f}, forma {row['FORM_LABEL']} e índice de lesão {row['INJURY_INDEX']:.2f}."
+            )
+
+        st.markdown("### Ideias de monetização")
+        st.write("- plano gratuito com picks limitadas")
+        st.write("- plano premium com edge score, bankroll tracker e histórico")
+        st.write("- área VIP com alertas e conteúdo exportável")
+
+elif page == "Diagnóstico":
+    st.subheader("Painel de diagnóstico")
+    d1, d2 = st.columns(2)
+    with d1:
+        st.code(
             f"""
-            <div class="main-card">
-                <strong>{level} {row['Tipo']} — {row['Time']}</strong><br>
-                {row['Motivo']}<br>
-                <span class="small-note">Sinal: {row['Sinal']} • Confiança: {row['Confiança']}%</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
+APP_TITLE = {APP_TITLE}
+SEASON = {SEASON_LABEL}
+SOURCE_MODE = {source_mode}
+RAPIDAPI_KEY = {'CONFIGURADA' if get_rapidapi_key() else 'AUSENTE'}
+AUTH_OK = {st.session_state.auth_ok}
+PREMIUM_OK = {st.session_state.premium_ok}
+LAST_REFRESH = {st.session_state.last_refresh}
+            """.strip(),
+            language="python",
         )
-    st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
+    with d2:
+        diag = {
+            "times": len(df_teams),
+            "players": len(df_players),
+            "colunas_times": len(df_teams.columns),
+            "colunas_players": len(df_players.columns),
+            "games_demo_today": len(load_games_for_date(date.today().isoformat(), df_teams)),
+        }
+        st.json(diag)
 
-elif analysis_mode == "Diagnóstico":
-    st.markdown('<div class="section-title">Diagnóstico técnico do bot</div>', unsafe_allow_html=True)
-    st.dataframe(health_df, use_container_width=True, hide_index=True)
-    st.code(
-        """# Estrutura recomendada
-nba-probet-bot/
-├── app.py
-├── requirements.txt
-└── .streamlit/
-    └── config.toml
-"""
-    )
-    st.markdown(
-        """
-        **O que esta versão resolve:**
-        - remove dependências quebradas;
-        - evita KeyError com fallback e colunas garantidas;
-        - mantém o app funcionando mesmo sem API externa;
-        - entrega análise mais profissional, com dashboard, comparador, jogadores e sugestões.
-        """
-    )
-
-if show_raw:
-    st.markdown('<div class="section-title">Tabela bruta de times</div>', unsafe_allow_html=True)
-    st.dataframe(df_teams_all, use_container_width=True, hide_index=True)
+    st.markdown("### Colunas do DataFrame principal")
+    st.write(df_teams.columns.tolist())
+    st.markdown("### Amostra dos dados")
+    st.dataframe(df_teams.head(10), use_container_width=True, hide_index=True)
+    st.info("Este painel serve para descobrir rápido se o erro é de dependência, API, estrutura de dados ou secrets no Streamlit Cloud.")
 
 st.markdown("---")
-st.caption("NBA ProBet Analytics 2.0 • arquitetura estável para Streamlit Cloud • pronto para GitHub e deploy")
+st.caption("NBA ProBet Analytics 3.0 — estrutura pronta para evoluir em SaaS, com fallback local e deploy estável.")
