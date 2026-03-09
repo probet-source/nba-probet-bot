@@ -12,3 +12,4 @@ ENV/
 *.key
 *.pem
 .streamlit/secrets.toml
+*.log
