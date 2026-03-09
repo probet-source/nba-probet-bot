@@ -1,6 +1,7 @@
 streamlit
 pandas
-nba_api
+nba-api
 plotly
 numpy
 requests
+urllib3
