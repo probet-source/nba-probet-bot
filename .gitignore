@@ -1,15 +1,3 @@
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-*.egg-info/
-.DS_Store
-.env
-*.key
-*.pem
+*.pyc
 .streamlit/secrets.toml
-*.log
