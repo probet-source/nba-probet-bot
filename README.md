@@ -1,28 +1,49 @@
-# NBA ProBet Analytics 3.0
+# NBA ProBet SaaS 4.0
 
-Versão 3.0 com foco em estabilidade no Streamlit Cloud, visual mais profissional e estrutura pronta para monetização.
+Versão 4.0 em estilo SaaS real, pronta para GitHub + Streamlit Cloud.
 
 ## Recursos
-- Dashboard executivo
-- Jogos do dia com projeções
-- Matchup Lab
-- Player Hub
-- Picks Engine
-- Bankroll Tracker
-- Área Premium
-- Diagnóstico de deploy
-- Fallback local caso a API externa falhe
 
-## Secrets opcionais no Streamlit Cloud
-```toml
-RAPIDAPI_KEY = "sua_chave"
-APP_ADMIN_USER = "admin"
-APP_ADMIN_PASSWORD = "123456"
-PREMIUM_ACCESS_CODE = "PROBETVIP"
-```
+- login e cadastro local com SQLite;
+- plano Free e Premium;
+- painel do usuário;
+- jogos do dia com projeções;
+- Matchup Lab;
+- Player Hub;
+- Picks Engine premium;
+- Bankroll Tracker com exportação CSV;
+- coleta de feedback;
+- painel administrativo;
+- MRR estimado e gestão básica de assinantes.
+
+## Estrutura
+
+- `app.py`
+- `requirements.txt`
+- `.streamlit/config.toml`
+- `README.md`
 
 ## Deploy
+
 1. Envie os arquivos para o GitHub.
 2. Aponte o Streamlit Cloud para `app.py`.
-3. Configure os secrets se quiser liberar API/login premium personalizados.
-4. Faça reboot após subir a nova versão.
+3. Faça o deploy.
+
+## Credenciais administrativas padrão
+
+Você pode mudar via Secrets/variáveis de ambiente:
+
+- `APP_ADMIN_EMAIL`
+- `APP_ADMIN_NAME`
+- `APP_ADMIN_PASSWORD`
+
+Padrões locais:
+
+- e-mail: `admin@probet.local`
+- senha: `admin123`
+
+## Observações
+
+- O banco `probet_saas.db` é criado automaticamente.
+- Esta versão foi projetada para rodar sem APIs externas, priorizando estabilidade.
+- Para produção comercial real, o próximo passo é integrar pagamento, recuperação de senha, e-mail transacional e autenticação robusta.
